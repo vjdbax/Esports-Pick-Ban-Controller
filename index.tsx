@@ -10,14 +10,34 @@ if (!rootElement) {
 
 const root = ReactDOM.createRoot(rootElement);
 
-// Robust Router: Check if URL contains 'overlay' anywhere
-const isOverlay = window.location.pathname.includes('/overlay') || window.location.hash.includes('overlay');
+// Robust Router logic
+const path = window.location.pathname;
+const hash = window.location.hash;
 
-if (isOverlay) {
-    // Mount Overlay for vMix Browser Input
+// Determine which view to render based on URL
+const isOverlayA = path.includes('/overlay-a') || hash.includes('overlay-a');
+const isOverlayB = path.includes('/overlay-b') || hash.includes('overlay-b');
+const isFullOverlay = path.includes('/overlay') || hash.includes('overlay');
+
+if (isOverlayA) {
+    // Render ONLY Team A elements
     root.render(
         <React.StrictMode>
-            <Overlay />
+            <Overlay variant="A" />
+        </React.StrictMode>
+    );
+} else if (isOverlayB) {
+    // Render ONLY Team B elements
+    root.render(
+        <React.StrictMode>
+            <Overlay variant="B" />
+        </React.StrictMode>
+    );
+} else if (isFullOverlay) {
+    // Render EVERYTHING (Default)
+    root.render(
+        <React.StrictMode>
+            <Overlay variant="full" />
         </React.StrictMode>
     );
 } else {

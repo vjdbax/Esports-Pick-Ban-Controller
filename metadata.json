@@ -1,0 +1,5 @@
+{
+  "name": "Esports Pick & Ban Controller",
+  "description": "A vMix-integrated controller for esports pick and ban phases with support for map videos and overlays.",
+  "requestFramePermissions": []
+}

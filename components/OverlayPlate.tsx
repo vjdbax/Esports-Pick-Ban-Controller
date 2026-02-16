@@ -46,7 +46,9 @@ export const OverlayPlate: React.FC<OverlayPlateProps> = ({
            <img src={mapImage} alt={mapName} className="w-full h-full object-cover" />
          ) : (
            <div className="w-full h-full bg-gray-800 flex items-center justify-center">
-              <span className="text-xs text-gray-500 text-center px-1 break-words leading-tight">{mapName || "?"}</span>
+              <span className="text-xs text-gray-500 text-center px-1 break-words leading-tight opacity-50">
+                  {mapName ? "?" : "WAITING"}
+              </span>
            </div>
          )}
          

@@ -11,8 +11,8 @@ const PORT = 3000;
 const VMIX_HOST = '127.0.0.1';
 const VMIX_PORT = 8088;
 
-// Middleware
-app.use(express.json({ limit: '50mb' }));
+// Middleware - Increased limit to 500mb for large image payloads
+app.use(express.json({ limit: '500mb' }));
 
 // Enable CORS for all routes to allow split dev/prod setups
 app.use((req, res, next) => {
@@ -52,7 +52,8 @@ app.get('/api/state', (req, res) => {
 app.post('/api/state', (req, res) => {
   // Update state with provided fields
   appState = { ...appState, ...req.body };
-  console.log(`[API] State updated. Triggered steps: ${appState.visibleSteps?.length}`);
+  // Log less verbose success message
+  // console.log(`[API] State updated. Triggered steps: ${appState.visibleSteps?.length}`);
   res.json({ success: true, state: appState });
 });
 

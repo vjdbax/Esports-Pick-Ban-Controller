@@ -76,7 +76,10 @@ const App: React.FC = () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }).catch(err => console.error("Failed to sync state", err));
+    }).catch(err => {
+        console.error("Failed to sync state", err);
+        // Optional: Alert user if sync keeps failing
+    });
 
   }, [teamAName, teamBName, maps, steps, selections, triggeredSteps, loading]);
 
@@ -264,6 +267,7 @@ const App: React.FC = () => {
       </div>
 
       {/* 2. Main Content Grid (3 Columns) */}
+      {/* CHANGED: removed flex-grow, added justify-center to group them in the middle */}
       <div className="flex-grow flex overflow-hidden p-4 gap-6 justify-center">
         
         {/* LEFT COLUMN: TEAM A OVERLAY PREVIEW */}
@@ -284,8 +288,9 @@ const App: React.FC = () => {
             </div>
         )}
 
-        {/* CENTER COLUMN: CONTROLS (NARROWER MAX-WIDTH) */}
-        <div className="flex-grow flex flex-col overflow-y-auto custom-scrollbar px-2 max-w-4xl mx-auto w-full">
+        {/* CENTER COLUMN: CONTROLS */}
+        {/* CHANGED: Removed flex-grow, kept width restrictions to keep sidebars close */}
+        <div className="flex flex-col overflow-y-auto custom-scrollbar px-2 w-full max-w-4xl shrink-0">
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 relative">
                <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gray-800 -translate-x-1/2 hidden md:block"></div>
 

@@ -10,6 +10,7 @@ interface OverlayPlateProps {
   colorEnd: string;
   fontFamily?: string;
   fontSize?: number;
+  borderWidth?: number;
 }
 
 export const OverlayPlate: React.FC<OverlayPlateProps> = ({ 
@@ -20,7 +21,8 @@ export const OverlayPlate: React.FC<OverlayPlateProps> = ({
   colorStart,
   colorEnd,
   fontFamily = 'Arial',
-  fontSize = 24
+  fontSize = 24,
+  borderWidth = 0
 }) => {
   // Stable transition for opacity
   const visibilityClass = isVisible ? 'opacity-100' : 'opacity-0';
@@ -51,11 +53,21 @@ export const OverlayPlate: React.FC<OverlayPlateProps> = ({
       fontSize: `${fontSize}px`
   };
 
+  // Border style for the image
+  const imageBoxStyle: React.CSSProperties = {
+      borderColor: colorStart, // Use the phase color for border
+      borderWidth: `${borderWidth}px`,
+      borderStyle: 'solid'
+  };
+
   return (
-    <div className={`flex items-end h-[72px] w-full mb-0 relative group transition-opacity duration-500 ${visibilityClass}`}>
+    <div className={`flex items-end w-full mb-0 relative group transition-opacity duration-500 ${visibilityClass}`} style={{ minHeight: '72px' }}>
       
       {/* Image Box */}
-      <div className="relative z-20 w-[110px] h-full shrink-0 border-2 border-gray-600 bg-gray-900 overflow-hidden shadow-lg">
+      <div 
+        className="relative z-20 w-[110px] self-stretch shrink-0 bg-gray-900 overflow-hidden shadow-lg box-border"
+        style={imageBoxStyle}
+      >
          {mapImage ? (
            <img src={mapImage} alt={mapName} className="w-full h-full object-cover" />
          ) : (
@@ -77,7 +89,7 @@ export const OverlayPlate: React.FC<OverlayPlateProps> = ({
 
       {/* Slanted Text Bar */}
       <div 
-          className="relative h-[50px] flex-grow flex items-center pl-4 pr-8 ml-[-2px] mb-[2px] shadow-md transition-all duration-500"
+          className="relative flex-grow flex items-center pl-4 pr-8 ml-[-2px] mb-[2px] shadow-md transition-all duration-500 min-h-[50px]"
           style={barStyle}
       >
           {/* Ensure text is always white and visible */}

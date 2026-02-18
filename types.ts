@@ -55,6 +55,7 @@ export interface DesignSettings {
   verticalGap: number; // px
   horizontalOffset: number; // px from center
   verticalOffset: number; // px from top base line
+  imageBorderWidth: number; // px
 
   // Typography
   fontSize: number;

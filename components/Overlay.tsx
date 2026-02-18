@@ -85,6 +85,7 @@ export const Overlay: React.FC<OverlayProps> = ({ variant = 'full' }) => {
       pickColorStart: "#006400", pickColorEnd: "#111111",
       deciderColorStart: "#ca8a04", deciderColorEnd: "#111111",
       scale: 1, verticalGap: 12, horizontalOffset: 60, verticalOffset: 180,
+      imageBorderWidth: 2,
       fontSize: 24, fontFamily: 'Arial', customFonts: []
   };
 
@@ -125,6 +126,7 @@ export const Overlay: React.FC<OverlayProps> = ({ variant = 'full' }) => {
                 colorEnd={cEnd}
                 fontSize={d.fontSize}
                 fontFamily={d.fontFamily}
+                borderWidth={d.imageBorderWidth}
             />
         </div>
     );

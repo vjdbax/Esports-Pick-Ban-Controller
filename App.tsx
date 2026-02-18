@@ -6,7 +6,7 @@ import { StepBox } from './components/StepBox';
 import { MapSelector } from './components/MapSelector';
 import { LogViewer } from './components/LogViewer';
 import { OverlayPlate } from './components/OverlayPlate';
-import { SettingsModal } from './components/SettingsModal';
+import { SettingsPanel } from './components/SettingsPanel';
 
 const App: React.FC = () => {
   const [maps, setMaps] = useState<MapData[]>([]);
@@ -29,6 +29,7 @@ const App: React.FC = () => {
       verticalGap: 12,
       horizontalOffset: 60,
       verticalOffset: 180,
+      imageBorderWidth: 2,
       fontSize: 24,
       fontFamily: 'Arial',
       customFonts: []
@@ -61,7 +62,12 @@ const App: React.FC = () => {
              }
              if (data.teamAName) setTeamAName(data.teamAName);
              if (data.teamBName) setTeamBName(data.teamBName);
-             if (data.steps) setSteps(data.steps);
+             
+             // ONLY update steps if server has valid data (length > 0)
+             if (data.steps && Array.isArray(data.steps) && data.steps.length > 0) {
+                setSteps(data.steps);
+             }
+
              if (data.selections) setSelections(data.selections);
              if (data.visibleSteps) setTriggeredSteps(data.visibleSteps);
              
@@ -264,17 +270,40 @@ const App: React.FC = () => {
         cEnd = design.deciderColorEnd;
     }
 
+    const isTriggered = triggeredSteps.includes(step.id);
+    
+    // Preview Logic: 
+    // - Always render (isVisible={true}) so user can see design
+    // - Use Opacity to indicate 'Not Triggered'
+    // - Apply Scale to simulate overlay look
+    // - Fixed width 450px to match overlay source width
+    
+    const isLeft = step.team === Team.A;
+
     return (
-        <div key={step.id} style={{ marginBottom: `${design.verticalGap}px` }}>
+        <div 
+            key={step.id} 
+            className="transition-all duration-300"
+            style={{ 
+                marginBottom: `${design.verticalGap * design.scale}px`,
+                opacity: isTriggered ? 1 : 0.4, // Dim if not live
+                transform: `scale(${design.scale})`,
+                transformOrigin: isLeft ? 'left top' : 'right top',
+                width: '450px',
+                // Adjust height based on scale to prevent overlapping since scale doesn't affect flow layout
+                height: `${72 * design.scale}px` 
+            }}
+        >
             <OverlayPlate 
                 type={step.type}
-                isVisible={triggeredSteps.includes(step.id)} 
+                isVisible={true} 
                 mapName={selections[step.id]}
                 mapImage={maps.find(m => m.name === selections[step.id])?.imageFile}
                 colorStart={cStart}
                 colorEnd={cEnd}
                 fontSize={design.fontSize}
                 fontFamily={design.fontFamily}
+                borderWidth={design.imageBorderWidth}
             />
         </div>
     );
@@ -332,8 +361,8 @@ const App: React.FC = () => {
 
         <div className="flex gap-4 items-center">
              <button 
-                onClick={() => setIsSettingsOpen(true)}
-                className="bg-gray-800 hover:bg-gray-700 text-white px-3 py-1 rounded text-xs uppercase font-bold border border-gray-600 flex items-center gap-1"
+                onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                className={`bg-gray-800 hover:bg-gray-700 text-white px-3 py-1 rounded text-xs uppercase font-bold border border-gray-600 flex items-center gap-1 ${isSettingsOpen ? 'bg-gray-700 ring-2 ring-orange-500' : ''}`}
             >
                 <span>⚙ Settings</span>
             </button>
@@ -383,10 +412,11 @@ const App: React.FC = () => {
 
       <div className="flex-grow flex overflow-hidden p-4 gap-6 justify-center">
         
+        {/* Left Preview - Added Padding and removed conflicting overflow to fix clipping */}
         {showPreviewA && (
-            <div className="hidden xl:flex flex-col w-[380px] shrink-0 border-r border-gray-800 pr-4 overflow-y-auto custom-scrollbar transition-all overflow-x-visible">
-                <h3 className="text-gray-500 font-bold uppercase text-xs mb-4 text-center">Overlay Preview (A)</h3>
-                <div className="space-y-0 pl-2">
+            <div className="hidden xl:flex flex-col w-[460px] shrink-0 border-r border-gray-800 pr-2 pl-4 overflow-y-auto custom-scrollbar">
+                <h3 className="text-gray-500 font-bold uppercase text-xs mb-4 text-left">Overlay Preview (A)</h3>
+                <div className="space-y-0">
                     {teamASteps.map(step => renderPreviewStep(step))}
                 </div>
             </div>
@@ -451,10 +481,11 @@ const App: React.FC = () => {
             )}
         </div>
 
+        {/* Right Preview - Added Padding and alignment to fix clipping */}
         {showPreviewB && (
-            <div className="hidden xl:flex flex-col w-[380px] shrink-0 border-l border-gray-800 pl-4 overflow-y-auto custom-scrollbar transition-all overflow-x-visible">
-                <h3 className="text-gray-500 font-bold uppercase text-xs mb-4 text-center">Overlay Preview (B)</h3>
-                <div className="space-y-0 pr-2">
+            <div className="hidden xl:flex flex-col w-[460px] shrink-0 border-l border-gray-800 pl-4 pr-2 overflow-y-auto custom-scrollbar items-end">
+                <h3 className="text-gray-500 font-bold uppercase text-xs mb-4 text-right w-full">Overlay Preview (B)</h3>
+                <div className="space-y-0 flex flex-col items-end">
                     {teamBSteps.map(step => renderPreviewStep(step))}
                 </div>
             </div>
@@ -488,7 +519,7 @@ const App: React.FC = () => {
         usedMapNames={Object.values(selections)}
       />
 
-      <SettingsModal 
+      <SettingsPanel 
         isOpen={isSettingsOpen}
         settings={design}
         onUpdate={setDesign}

@@ -45,10 +45,38 @@ const defaultDesign = {
   verticalGap: 12,
   horizontalOffset: 60, // distance from center
   verticalOffset: 180, // top position
+  imageBorderWidth: 2, // default border width
   fontSize: 24,
   fontFamily: "Arial",
   customFonts: []
 };
+
+// Default Match Sequence (Hardcoded here to ensure server has valid state on startup)
+const DEFAULT_MATCH_SEQUENCE = [
+  { id: 1, team: 'Team A', type: 'BAN' },
+  { id: 2, team: 'Team B', type: 'BAN' },
+  { id: 3, team: 'Team B', type: 'BAN' },
+  { id: 4, team: 'Team A', type: 'BAN' },
+  { id: 5, team: 'Team A', type: 'PICK' },
+  { id: 6, team: 'Team B', type: 'PICK' },
+  { id: 7, team: 'Team B', type: 'BAN' },
+  { id: 8, team: 'Team A', type: 'BAN' },
+  { id: 9, team: 'Team A', type: 'PICK' },
+  { id: 10, team: 'Team B', type: 'PICK' },
+  { id: 11, team: 'Team A', type: 'BAN' },
+  { id: 12, team: 'Team B', type: 'BAN' },
+  { id: 13, team: 'Team A', type: 'PICK' },
+  { id: 14, team: 'Team B', type: 'PICK' },
+  { id: 15, team: 'Team B', type: 'BAN' },
+  { id: 16, team: 'Team A', type: 'BAN' },
+  { id: 17, team: 'Team A', type: 'PICK' },
+  { id: 18, team: 'Team B', type: 'PICK' },
+  { id: 19, team: 'Team A', type: 'BAN' },
+  { id: 20, team: 'Team B', type: 'BAN' },
+  { id: 21, team: 'Team A', type: 'PICK' },
+  { id: 22, team: 'Team B', type: 'PICK' },
+  { id: 23, team: 'Decider', type: 'DECIDER' },
+];
 
 // In-Memory State Store
 let appState = {
@@ -56,7 +84,7 @@ let appState = {
   teamBName: "Team B",
   // Maps are stored here but NOT sent in generic /api/state GET requests
   maps: [], 
-  steps: [],
+  steps: DEFAULT_MATCH_SEQUENCE,
   selections: {},
   visibleSteps: [],
   design: defaultDesign,
@@ -90,7 +118,17 @@ app.post('/api/state', (req, res) => {
   
   // Merge other top level keys
   const { design, ...otherRest } = rest;
-  appState = { ...appState, ...otherRest };
+  
+  // Protect steps from being wiped with empty array if sent by accident
+  if (otherRest.steps && Array.isArray(otherRest.steps) && otherRest.steps.length > 0) {
+      appState.steps = otherRest.steps;
+  }
+  
+  // Update other simple fields
+  if (otherRest.teamAName !== undefined) appState.teamAName = otherRest.teamAName;
+  if (otherRest.teamBName !== undefined) appState.teamBName = otherRest.teamBName;
+  if (otherRest.selections !== undefined) appState.selections = otherRest.selections;
+  if (otherRest.visibleSteps !== undefined) appState.visibleSteps = otherRest.visibleSteps;
 
   // 2. If maps are provided, update them and tick the version timestamp
   if (maps && Array.isArray(maps)) {

@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { MATCH_SEQUENCE } from './constants';
-import { MapData, SelectionState, Team, PhaseType, MatchStep, LogEntry, SharedState } from './types';
+import { MapData, SelectionState, Team, PhaseType, MatchStep, LogEntry, DesignSettings } from './types';
 import { vmixService } from './services/vmixService';
 import { StepBox } from './components/StepBox';
 import { MapSelector } from './components/MapSelector';
 import { LogViewer } from './components/LogViewer';
 import { OverlayPlate } from './components/OverlayPlate';
+import { SettingsModal } from './components/SettingsModal';
 
 const App: React.FC = () => {
   const [maps, setMaps] = useState<MapData[]>([]);
@@ -15,73 +16,135 @@ const App: React.FC = () => {
   const [currentStepId, setCurrentStepId] = useState<number>(1);
   const [teamAName, setTeamAName] = useState<string>("Team A");
   const [teamBName, setTeamBName] = useState<string>("Team B");
-  
+
+  // Design Settings State
+  const [design, setDesign] = useState<DesignSettings>({
+      banColorStart: "#880000",
+      banColorEnd: "#111111",
+      pickColorStart: "#006400",
+      pickColorEnd: "#111111",
+      deciderColorStart: "#ca8a04",
+      deciderColorEnd: "#111111",
+      scale: 1,
+      verticalGap: 12,
+      horizontalOffset: 60,
+      verticalOffset: 180,
+      fontSize: 24,
+      fontFamily: 'Arial',
+      customFonts: []
+  });
+
   const [loading, setLoading] = useState<boolean>(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [editingStepId, setEditingStepId] = useState<number | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isLogOpen, setIsLogOpen] = useState(false);
 
-  // Toggle State for Previews
+  // Sync Controls
+  const [autoSync, setAutoSync] = useState<boolean>(true);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  
+  const [mapsDirty, setMapsDirty] = useState<boolean>(false);
+
   const [showPreviewA, setShowPreviewA] = useState(true);
   const [showPreviewB, setShowPreviewB] = useState(true);
 
-  // Load initial maps
+  // Load initial state
   useEffect(() => {
-    fetch('/maps.json')
-      .then(res => res.json())
-      .then(data => {
-        setMaps(data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error("Failed to load maps.json", err);
-        setLoading(false);
-      });
+    fetch('/api/state')
+        .then(res => res.json())
+        .then(data => {
+             // Merge Design settings
+             if (data.design) {
+                 setDesign(prev => ({...prev, ...data.design}));
+             }
+             if (data.teamAName) setTeamAName(data.teamAName);
+             if (data.teamBName) setTeamBName(data.teamBName);
+             if (data.steps) setSteps(data.steps);
+             if (data.selections) setSelections(data.selections);
+             if (data.visibleSteps) setTriggeredSteps(data.visibleSteps);
+             
+             // Then load maps
+             return fetch('/api/maps');
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(Array.isArray(data) && data.length > 0) {
+                setMaps(data);
+            } else if (maps.length === 0) {
+                 // fallback
+                 fetch('/maps.json').then(r => r.json()).then(d => {
+                     if (Array.isArray(d)) { 
+                         setMaps(d);
+                         setMapsDirty(true);
+                     }
+                 });
+            }
+        })
+        .catch(e => console.warn("Init load error", e))
+        .finally(() => setLoading(false));
   }, []);
 
   // vMix Log Subscription
   useEffect(() => {
-    // Initial subscription
     const unsubscribe = vmixService.onLog((entry) => {
       setLogs(prev => {
-        // Simple check to avoid duplicate IDs if strict mode double-invokes
         if (prev.some(l => l.id === entry.id)) return prev;
         return [...prev, entry];
       });
     });
-    
-    // Log startup
-    setTimeout(() => {
-        vmixService.logInfo("System Ready", "Admin Panel Loaded");
-    }, 500);
-
     return () => unsubscribe();
   }, []);
 
-  // Sync state to server
+  // -- SYNC LOGIC --
+  const pushStateToOverlay = async () => {
+    setSyncStatus('syncing');
+    
+    const payload: any = {
+      teamAName,
+      teamBName,
+      steps,
+      selections,
+      visibleSteps: triggeredSteps,
+      design
+    };
+
+    if (mapsDirty) {
+        payload.maps = maps;
+    }
+
+    try {
+      const res = await fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error("Sync failed");
+      
+      if (mapsDirty) setMapsDirty(false);
+
+      setSyncStatus('synced');
+      setTimeout(() => setSyncStatus('idle'), 2000);
+    } catch (err) {
+        console.error("Failed to sync state", err);
+        setSyncStatus('error');
+    }
+  };
+
+  // Auto Sync Effect
   useEffect(() => {
     if (loading) return;
 
-    const payload: SharedState = {
-      teamAName,
-      teamBName,
-      maps,
-      steps,
-      selections,
-      visibleSteps: triggeredSteps
-    };
-
-    fetch('/api/state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }).catch(err => {
-        console.error("Failed to sync state", err);
-        // Optional: Alert user if sync keeps failing
-    });
-
-  }, [teamAName, teamBName, maps, steps, selections, triggeredSteps, loading]);
+    if (autoSync) {
+        const timer = setTimeout(() => {
+            pushStateToOverlay();
+        }, 500);
+        return () => clearTimeout(timer);
+    } else {
+        setSyncStatus('idle');
+    }
+  }, [teamAName, teamBName, steps, selections, triggeredSteps, loading, autoSync, mapsDirty, design]);
 
 
   const handleSelection = (stepId: number) => {
@@ -138,7 +201,6 @@ const App: React.FC = () => {
 
   const handleShowAll = () => {
     if(confirm("Show ALL maps on overlay?")) {
-        vmixService.logInfo("Command: Show All Maps", "Manual trigger");
         const allIds = steps.map(s => s.id);
         setTriggeredSteps(allIds);
     }
@@ -146,7 +208,6 @@ const App: React.FC = () => {
 
   const handleHideAll = () => {
     if(confirm("Hide ALL maps from overlay?")) {
-        vmixService.logInfo("Command: Hide All Maps", "Manual trigger");
         setTriggeredSteps([]);
     }
   };
@@ -170,6 +231,7 @@ const App: React.FC = () => {
         });
       }
       setMaps(prev => [...prev, ...newMaps]);
+      setMapsDirty(true); 
       vmixService.logInfo("Images Uploaded", `${newMaps.length} images processed`);
     }
   };
@@ -185,22 +247,67 @@ const App: React.FC = () => {
   };
 
   const openOverlay = () => {
-    window.open('/overlay', '_blank');
+    const params = new URLSearchParams({ ts: Date.now().toString() });
+    window.open(`/overlay?${params.toString()}`, '_blank');
   };
 
-  const openOverlayA = () => {
-    window.open('/overlay-a', '_blank');
-  };
+  // Helper for Preview rendering
+  const renderPreviewStep = (step: MatchStep) => {
+    let cStart = design.banColorStart;
+    let cEnd = design.banColorEnd;
+    
+    if (step.type === PhaseType.PICK) {
+        cStart = design.pickColorStart;
+        cEnd = design.pickColorEnd;
+    } else if (step.type === PhaseType.DECIDER) {
+        cStart = design.deciderColorStart;
+        cEnd = design.deciderColorEnd;
+    }
 
-  const openOverlayB = () => {
-    window.open('/overlay-b', '_blank');
+    return (
+        <div key={step.id} style={{ marginBottom: `${design.verticalGap}px` }}>
+            <OverlayPlate 
+                type={step.type}
+                isVisible={triggeredSteps.includes(step.id)} 
+                mapName={selections[step.id]}
+                mapImage={maps.find(m => m.name === selections[step.id])?.imageFile}
+                colorStart={cStart}
+                colorEnd={cEnd}
+                fontSize={design.fontSize}
+                fontFamily={design.fontFamily}
+            />
+        </div>
+    );
   };
 
   const teamASteps = steps.filter(s => s.team === Team.A);
   const teamBSteps = steps.filter(s => s.team === Team.B);
   const deciderStep = steps.find(s => s.type === PhaseType.DECIDER);
+  
+  // Font Injection for Preview
+  useEffect(() => {
+      const styleId = 'custom-fonts-preview';
+      let styleTag = document.getElementById(styleId);
+      if (!styleTag) {
+          styleTag = document.createElement('style');
+          styleTag.id = styleId;
+          document.head.appendChild(styleTag);
+      }
+      
+      let css = '';
+      design.customFonts.forEach(font => {
+          css += `
+            @font-face {
+              font-family: '${font.name}';
+              src: url('${font.data}');
+            }
+          `;
+      });
+      styleTag.innerHTML = css;
+  }, [design.customFonts]);
 
-  if (loading) return <div className="p-10 text-white bg-gray-950 h-screen">Loading...</div>;
+
+  if (loading) return <div className="p-10 text-white bg-gray-950 h-screen flex items-center justify-center font-bold text-2xl">Loading Controller...</div>;
 
   return (
     <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
@@ -208,45 +315,53 @@ const App: React.FC = () => {
       {/* 1. Header Area */}
       <div className="bg-gradient-to-r from-orange-600 to-orange-500 p-2 shadow-lg flex justify-between items-center px-4 shrink-0 z-30">
         <div className="flex items-center gap-4">
-            <span className="font-bold text-black uppercase tracking-widest hidden md:inline">Pick & Ban Controller</span>
-            {/* View Toggles */}
-            <div className="flex gap-1">
-                <button 
-                    onClick={() => setShowPreviewA(!showPreviewA)}
-                    className={`text-xs px-2 py-1 rounded font-bold uppercase border ${showPreviewA ? 'bg-black text-white border-black' : 'bg-transparent text-black border-black/50 opacity-50'}`}
-                >
-                    Show Preview A
-                </button>
-                 <button 
-                    onClick={() => setShowPreviewB(!showPreviewB)}
-                    className={`text-xs px-2 py-1 rounded font-bold uppercase border ${showPreviewB ? 'bg-black text-white border-black' : 'bg-transparent text-black border-black/50 opacity-50'}`}
-                >
-                    Show Preview B
-                </button>
+            <span className="font-bold text-black uppercase tracking-widest hidden md:inline">Pick & Ban</span>
+            
+            <div className="flex items-center gap-2 bg-black/20 px-3 py-1 rounded-full border border-black/10">
+                <div className={`w-3 h-3 rounded-full ${syncStatus === 'syncing' ? 'bg-yellow-400 animate-pulse' : syncStatus === 'error' ? 'bg-red-500' : 'bg-green-500'}`}></div>
+                <span className="text-xs font-bold text-black uppercase">
+                    {syncStatus === 'syncing' ? 'SYNCING...' : syncStatus === 'error' ? 'OFFLINE' : 'ONLINE'}
+                </span>
+            </div>
+
+            <div className="flex gap-1 ml-4">
+                <button onClick={() => setShowPreviewA(!showPreviewA)} className={`text-xs px-2 py-1 rounded font-bold uppercase border ${showPreviewA ? 'bg-black text-white border-black' : 'bg-transparent text-black border-black/50 opacity-50'}`}>A</button>
+                <button onClick={() => setShowPreviewB(!showPreviewB)} className={`text-xs px-2 py-1 rounded font-bold uppercase border ${showPreviewB ? 'bg-black text-white border-black' : 'bg-transparent text-black border-black/50 opacity-50'}`}>B</button>
             </div>
         </div>
 
-        <div className="flex gap-2">
-            <button 
-                onClick={openOverlayA}
-                className="bg-gray-800 text-white px-3 py-1 rounded text-xs uppercase font-bold hover:bg-gray-700 transition-colors border border-gray-600"
-                title="Open just Team A Overlay"
+        <div className="flex gap-4 items-center">
+             <button 
+                onClick={() => setIsSettingsOpen(true)}
+                className="bg-gray-800 hover:bg-gray-700 text-white px-3 py-1 rounded text-xs uppercase font-bold border border-gray-600 flex items-center gap-1"
             >
-                Overlay A
+                <span>⚙ Settings</span>
             </button>
-            <button 
-                onClick={openOverlayB}
-                className="bg-gray-800 text-white px-3 py-1 rounded text-xs uppercase font-bold hover:bg-gray-700 transition-colors border border-gray-600"
-                title="Open just Team B Overlay"
-            >
-                Overlay B
-            </button>
-            <button 
-                onClick={openOverlay}
-                className="bg-black text-white px-4 py-1 rounded text-xs uppercase font-bold hover:bg-gray-800 transition-colors border border-gray-700"
-                title="Open Full Overlay"
-            >
-                FULL OVERLAY
+            
+            <div className="flex items-center gap-2 bg-gray-800 rounded px-2 py-1 border border-gray-600">
+                <input 
+                    type="checkbox" 
+                    checked={autoSync} 
+                    onChange={(e) => setAutoSync(e.target.checked)}
+                    id="autoSync"
+                    className="cursor-pointer accent-orange-500"
+                />
+                <label htmlFor="autoSync" className="text-xs uppercase font-bold cursor-pointer select-none">Auto Sync</label>
+            </div>
+
+            {!autoSync && (
+                <button 
+                    onClick={pushStateToOverlay}
+                    className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs uppercase font-bold border border-blue-400 shadow-md animate-pulse"
+                >
+                    PUSH TO OVERLAY
+                </button>
+            )}
+
+            <div className="h-6 w-px bg-black/20 mx-2"></div>
+
+            <button onClick={openOverlay} className="bg-black text-white px-4 py-1 rounded text-xs uppercase font-bold hover:bg-gray-800 transition-colors border border-gray-700">
+                OPEN OVERLAY
             </button>
         </div>
       </div>
@@ -266,35 +381,21 @@ const App: React.FC = () => {
          />
       </div>
 
-      {/* 2. Main Content Grid (3 Columns) */}
-      {/* CHANGED: removed flex-grow, added justify-center to group them in the middle */}
       <div className="flex-grow flex overflow-hidden p-4 gap-6 justify-center">
         
-        {/* LEFT COLUMN: TEAM A OVERLAY PREVIEW */}
         {showPreviewA && (
-            <div className="hidden xl:flex flex-col w-[350px] shrink-0 border-r border-gray-800 pr-4 overflow-y-auto custom-scrollbar transition-all">
+            <div className="hidden xl:flex flex-col w-[380px] shrink-0 border-r border-gray-800 pr-4 overflow-y-auto custom-scrollbar transition-all overflow-x-visible">
                 <h3 className="text-gray-500 font-bold uppercase text-xs mb-4 text-center">Overlay Preview (A)</h3>
-                <div className="space-y-0">
-                    {teamASteps.map(step => (
-                        <OverlayPlate 
-                            key={step.id}
-                            type={step.type}
-                            isVisible={true}
-                            mapName={selections[step.id]}
-                            mapImage={maps.find(m => m.name === selections[step.id])?.imageFile}
-                        />
-                    ))}
+                <div className="space-y-0 pl-2">
+                    {teamASteps.map(step => renderPreviewStep(step))}
                 </div>
             </div>
         )}
 
-        {/* CENTER COLUMN: CONTROLS */}
-        {/* CHANGED: Removed flex-grow, kept width restrictions to keep sidebars close */}
         <div className="flex flex-col overflow-y-auto custom-scrollbar px-2 w-full max-w-4xl shrink-0">
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 relative">
                <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gray-800 -translate-x-1/2 hidden md:block"></div>
 
-               {/* Team A Controls */}
                <div className="space-y-2">
                  {teamASteps.map(step => (
                    <StepBox
@@ -313,7 +414,6 @@ const App: React.FC = () => {
                  ))}
                </div>
 
-               {/* Team B Controls */}
                <div className="space-y-2">
                  {teamBSteps.map(step => (
                    <StepBox
@@ -351,44 +451,24 @@ const App: React.FC = () => {
             )}
         </div>
 
-        {/* RIGHT COLUMN: TEAM B OVERLAY PREVIEW */}
         {showPreviewB && (
-            <div className="hidden xl:flex flex-col w-[350px] shrink-0 border-l border-gray-800 pl-4 overflow-y-auto custom-scrollbar transition-all">
+            <div className="hidden xl:flex flex-col w-[380px] shrink-0 border-l border-gray-800 pl-4 overflow-y-auto custom-scrollbar transition-all overflow-x-visible">
                 <h3 className="text-gray-500 font-bold uppercase text-xs mb-4 text-center">Overlay Preview (B)</h3>
-                <div className="space-y-0">
-                    {teamBSteps.map(step => (
-                        <OverlayPlate 
-                            key={step.id}
-                            type={step.type}
-                            isVisible={true}
-                            mapName={selections[step.id]}
-                            mapImage={maps.find(m => m.name === selections[step.id])?.imageFile}
-                        />
-                    ))}
+                <div className="space-y-0 pr-2">
+                    {teamBSteps.map(step => renderPreviewStep(step))}
                 </div>
             </div>
         )}
       </div>
 
-      {/* 3. Control Footer */}
+      {/* Footer */}
       <div className="bg-gray-900 border-t border-gray-800 p-4 sticky bottom-0 z-40 shadow-2xl shrink-0">
         <div className="max-w-7xl mx-auto flex flex-col xl:flex-row justify-between items-center gap-4">
           <div className="flex gap-2">
-            <button onClick={resetAll} className="px-3 py-1 bg-red-900/50 text-red-400 border border-red-900 hover:bg-red-900 text-xs rounded uppercase">
-              Reset All
-            </button>
-            <button onClick={handleShowAll} className="px-3 py-1 bg-green-900/50 text-green-400 border border-green-900 hover:bg-green-900 text-xs rounded uppercase">
-              Show All
-            </button>
-            <button onClick={handleHideAll} className="px-3 py-1 bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700 text-xs rounded uppercase">
-              Hide All
-            </button>
-            <button 
-              onClick={() => setIsLogOpen(true)} 
-              className="px-3 py-1 bg-gray-800 text-blue-400 border border-gray-700 hover:bg-gray-700 text-xs rounded uppercase font-mono ml-4"
-            >
-              Logs ({logs.length})
-            </button>
+            <button onClick={resetAll} className="px-3 py-1 bg-red-900/50 text-red-400 border border-red-900 hover:bg-red-900 text-xs rounded uppercase">Reset All</button>
+            <button onClick={handleShowAll} className="px-3 py-1 bg-green-900/50 text-green-400 border border-green-900 hover:bg-green-900 text-xs rounded uppercase">Show All</button>
+            <button onClick={handleHideAll} className="px-3 py-1 bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700 text-xs rounded uppercase">Hide All</button>
+            <button onClick={() => setIsLogOpen(true)} className="px-3 py-1 bg-gray-800 text-blue-400 border border-gray-700 hover:bg-gray-700 text-xs rounded uppercase font-mono ml-4">Logs ({logs.length})</button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -406,6 +486,13 @@ const App: React.FC = () => {
         onSelect={confirmMapSelection}
         onClose={() => setIsModalOpen(false)}
         usedMapNames={Object.values(selections)}
+      />
+
+      <SettingsModal 
+        isOpen={isSettingsOpen}
+        settings={design}
+        onUpdate={setDesign}
+        onClose={() => setIsSettingsOpen(false)}
       />
 
       <LogViewer 

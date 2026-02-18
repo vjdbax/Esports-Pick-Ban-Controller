@@ -1,3 +1,4 @@
+
 export enum PhaseType {
   BAN = 'BAN',
   PICK = 'PICK',
@@ -12,8 +13,8 @@ export enum Team {
 
 export interface MapData {
   name: string;
-  videoInput: string; // Kept for legacy vMix compatibility if needed
-  imageFile: string; // Base64 Data URL for Overlay compatibility
+  videoInput: string; 
+  imageFile: string; 
   imageFileName?: string;
 }
 
@@ -35,6 +36,32 @@ export interface LogEntry {
   details?: any;
 }
 
+export interface CustomFont {
+  name: string;
+  data: string; // Base64
+}
+
+export interface DesignSettings {
+  // Colors (Start / End gradients)
+  banColorStart: string;
+  banColorEnd: string;
+  pickColorStart: string;
+  pickColorEnd: string;
+  deciderColorStart: string;
+  deciderColorEnd: string;
+
+  // Geometry
+  scale: number; // 0.5 to 2.0
+  verticalGap: number; // px
+  horizontalOffset: number; // px from center
+  verticalOffset: number; // px from top base line
+
+  // Typography
+  fontSize: number;
+  fontFamily: string;
+  customFonts: CustomFont[];
+}
+
 // New Interface for the shared application state
 export interface SharedState {
   teamAName: string;
@@ -42,5 +69,8 @@ export interface SharedState {
   maps: MapData[];
   steps: MatchStep[];
   selections: SelectionState;
-  visibleSteps: number[]; // IDs of steps that have been triggered ("GO")
+  visibleSteps: number[];
+  
+  // New Design Settings Container
+  design: DesignSettings;
 }

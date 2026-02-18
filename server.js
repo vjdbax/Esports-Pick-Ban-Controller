@@ -14,7 +14,7 @@ const VMIX_PORT = 8088;
 // Middleware - Increased limit to 500mb for large image payloads
 app.use(express.json({ limit: '500mb' }));
 
-// Enable CORS for all routes to allow split dev/prod setups
+// Enable CORS for all routes
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
@@ -27,34 +27,79 @@ app.use((req, res, next) => {
 
 // Request Logger
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api')) {
-    console.log(`[API] ${req.method} ${req.path}`);
+  if (req.path.startsWith('/api') && !req.path.startsWith('/api/state')) {
+      console.log(`[API] ${req.method} ${req.path}`);
   }
   next();
 });
+
+// Default Design State
+const defaultDesign = {
+  banColorStart: "#880000",
+  banColorEnd: "#111111",
+  pickColorStart: "#006400",
+  pickColorEnd: "#111111",
+  deciderColorStart: "#ca8a04",
+  deciderColorEnd: "#111111",
+  scale: 1,
+  verticalGap: 12,
+  horizontalOffset: 60, // distance from center
+  verticalOffset: 180, // top position
+  fontSize: 24,
+  fontFamily: "Arial",
+  customFonts: []
+};
 
 // In-Memory State Store
 let appState = {
   teamAName: "Team A",
   teamBName: "Team B",
-  maps: [],
-  steps: [], // Will be populated by client on init
+  // Maps are stored here but NOT sent in generic /api/state GET requests
+  maps: [], 
+  steps: [],
   selections: {},
-  visibleSteps: []
+  visibleSteps: [],
+  design: defaultDesign,
+  // Versioning for maps to let clients know when to re-fetch heavy data
+  mapUpdateTs: Date.now() 
 };
 
 // --- API: State Management ---
 
+// LIGHTWEIGHT POLLING ENDPOINT
 app.get('/api/state', (req, res) => {
-  res.json(appState);
+  // Destructure maps out, return everything else
+  const { maps, ...lightState } = appState;
+  res.json(lightState);
 });
 
+// HEAVY DATA ENDPOINT
+app.get('/api/maps', (req, res) => {
+  res.json(appState.maps);
+});
+
+// UPDATE ENDPOINT
 app.post('/api/state', (req, res) => {
-  // Update state with provided fields
-  appState = { ...appState, ...req.body };
-  // Log less verbose success message
-  // console.log(`[API] State updated. Triggered steps: ${appState.visibleSteps?.length}`);
-  res.json({ success: true, state: appState });
+  const { maps, ...rest } = req.body;
+
+  // 1. Update lightweight fields
+  // Deep merge for design object to prevent overwriting if partial data sent (though frontend sends full)
+  if (rest.design) {
+    appState.design = { ...appState.design, ...rest.design };
+  }
+  
+  // Merge other top level keys
+  const { design, ...otherRest } = rest;
+  appState = { ...appState, ...otherRest };
+
+  // 2. If maps are provided, update them and tick the version timestamp
+  if (maps && Array.isArray(maps)) {
+    appState.maps = maps;
+    appState.mapUpdateTs = Date.now();
+    console.log(`[API] Maps updated. Count: ${maps.length}`);
+  }
+
+  res.json({ success: true, mapUpdateTs: appState.mapUpdateTs });
 });
 
 // --- API: vMix Proxy (Legacy Support) ---
@@ -83,17 +128,16 @@ app.get('/api/vmix', (req, res) => {
   request.end();
 });
 
-// Serve static files
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: "API Route not found" });
+});
+
 app.use(express.static(__dirname));
 
-// Routing for SPA
-// Use Regex (/.*/) instead of '*' string to avoid "Missing parameter name" error in newer Express/path-to-regexp versions
 app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
-  console.log(`Controller: http://localhost:${PORT}`);
-  console.log(`Overlay:    http://localhost:${PORT}/overlay`);
 });

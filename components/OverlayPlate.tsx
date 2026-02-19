@@ -11,6 +11,7 @@ interface OverlayPlateProps {
   fontFamily?: string;
   fontSize?: number;
   borderWidth?: number;
+  language?: 'EN' | 'RU'; // New Prop
 }
 
 export const OverlayPlate: React.FC<OverlayPlateProps> = ({ 
@@ -22,17 +23,27 @@ export const OverlayPlate: React.FC<OverlayPlateProps> = ({
   colorEnd,
   fontFamily = 'Arial',
   fontSize = 24,
-  borderWidth = 0
+  borderWidth = 0,
+  language = 'EN'
 }) => {
   // Stable transition for opacity
   const visibilityClass = isVisible ? 'opacity-100' : 'opacity-0';
 
   const getLabel = (t: PhaseType) => {
-    switch(t) {
-      case PhaseType.BAN: return "BAN";
-      case PhaseType.PICK: return "PICK";
-      case PhaseType.DECIDER: return "DECIDER";
-      default: return t;
+    if (language === 'RU') {
+        switch(t) {
+            case PhaseType.BAN: return "БАН";
+            case PhaseType.PICK: return "ПИК";
+            case PhaseType.DECIDER: return "ТАЙ-БРЕЙК";
+            default: return t;
+        }
+    } else {
+        switch(t) {
+            case PhaseType.BAN: return "BAN";
+            case PhaseType.PICK: return "PICK";
+            case PhaseType.DECIDER: return "DECIDER";
+            default: return t;
+        }
     }
   };
   

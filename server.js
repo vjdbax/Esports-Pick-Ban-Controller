@@ -2,14 +2,13 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3000;
-const VMIX_HOST = '127.0.0.1';
-const VMIX_PORT = 8088;
 
 // Middleware - Increased limit to 500mb for large image payloads
 app.use(express.json({ limit: '500mb' }));
@@ -35,47 +34,58 @@ app.use((req, res, next) => {
 
 // Default Design State
 const defaultDesign = {
-  banColorStart: "#880000",
-  banColorEnd: "#111111",
-  pickColorStart: "#006400",
-  pickColorEnd: "#111111",
-  deciderColorStart: "#ca8a04",
-  deciderColorEnd: "#111111",
+  // Appending 'ff' to ensure 100% opacity by default if older clients connect, 
+  // though the frontend handles hex normalization.
+  banColorStart: "#880000ff", 
+  banColorEnd: "#111111ff",
+  pickColorStart: "#006400ff",
+  pickColorEnd: "#111111ff",
+  deciderColorStart: "#ca8a04ff",
+  deciderColorEnd: "#111111ff",
   scale: 1,
+  itemScale: 1,
   verticalGap: 12,
   horizontalOffset: 60, // distance from center
   verticalOffset: 180, // top position
   imageBorderWidth: 2, // default border width
+  deciderOffsetX: 0,
+  deciderOffsetY: 0,
   fontSize: 24,
   fontFamily: "Arial",
-  customFonts: []
+  customFonts: [],
+  language: 'EN',
+  vmixDelay: 4000, // 4 seconds default
+  // vMix Connection Defaults
+  vmixHost: '127.0.0.1',
+  vmixPort: 8088
 };
 
 // Default Match Sequence (Hardcoded here to ensure server has valid state on startup)
+// Added default customIds corresponding to their sequence
 const DEFAULT_MATCH_SEQUENCE = [
-  { id: 1, team: 'Team A', type: 'BAN' },
-  { id: 2, team: 'Team B', type: 'BAN' },
-  { id: 3, team: 'Team B', type: 'BAN' },
-  { id: 4, team: 'Team A', type: 'BAN' },
-  { id: 5, team: 'Team A', type: 'PICK' },
-  { id: 6, team: 'Team B', type: 'PICK' },
-  { id: 7, team: 'Team B', type: 'BAN' },
-  { id: 8, team: 'Team A', type: 'BAN' },
-  { id: 9, team: 'Team A', type: 'PICK' },
-  { id: 10, team: 'Team B', type: 'PICK' },
-  { id: 11, team: 'Team A', type: 'BAN' },
-  { id: 12, team: 'Team B', type: 'BAN' },
-  { id: 13, team: 'Team A', type: 'PICK' },
-  { id: 14, team: 'Team B', type: 'PICK' },
-  { id: 15, team: 'Team B', type: 'BAN' },
-  { id: 16, team: 'Team A', type: 'BAN' },
-  { id: 17, team: 'Team A', type: 'PICK' },
-  { id: 18, team: 'Team B', type: 'PICK' },
-  { id: 19, team: 'Team A', type: 'BAN' },
-  { id: 20, team: 'Team B', type: 'BAN' },
-  { id: 21, team: 'Team A', type: 'PICK' },
-  { id: 22, team: 'Team B', type: 'PICK' },
-  { id: 23, team: 'Decider', type: 'DECIDER' },
+  { id: 1, customId: "1", team: 'Team A', type: 'BAN' },
+  { id: 2, customId: "2", team: 'Team B', type: 'BAN' },
+  { id: 3, customId: "3", team: 'Team B', type: 'BAN' },
+  { id: 4, customId: "4", team: 'Team A', type: 'BAN' },
+  { id: 5, customId: "5", team: 'Team A', type: 'PICK' },
+  { id: 6, customId: "6", team: 'Team B', type: 'PICK' },
+  { id: 7, customId: "7", team: 'Team B', type: 'BAN' },
+  { id: 8, customId: "8", team: 'Team A', type: 'BAN' },
+  { id: 9, customId: "9", team: 'Team A', type: 'PICK' },
+  { id: 10, customId: "10", team: 'Team B', type: 'PICK' },
+  { id: 11, customId: "11", team: 'Team A', type: 'BAN' },
+  { id: 12, customId: "12", team: 'Team B', type: 'BAN' },
+  { id: 13, customId: "13", team: 'Team A', type: 'PICK' },
+  { id: 14, customId: "14", team: 'Team B', type: 'PICK' },
+  { id: 15, customId: "15", team: 'Team B', type: 'BAN' },
+  { id: 16, customId: "16", team: 'Team A', type: 'BAN' },
+  { id: 17, customId: "17", team: 'Team A', type: 'PICK' },
+  { id: 18, customId: "18", team: 'Team B', type: 'PICK' },
+  { id: 19, customId: "19", team: 'Team A', type: 'BAN' },
+  { id: 20, customId: "20", team: 'Team B', type: 'BAN' },
+  { id: 21, customId: "21", team: 'Team A', type: 'PICK' },
+  { id: 22, customId: "22", team: 'Team B', type: 'PICK' },
+  { id: 23, customId: "23", team: 'Decider', type: 'DECIDER' },
 ];
 
 // In-Memory State Store
@@ -104,6 +114,22 @@ app.get('/api/state', (req, res) => {
 // HEAVY DATA ENDPOINT
 app.get('/api/maps', (req, res) => {
   res.json(appState.maps);
+});
+
+// README ENDPOINT
+app.get('/api/readme', (req, res) => {
+    try {
+        const readmePath = path.join(__dirname, 'README.md');
+        if (fs.existsSync(readmePath)) {
+            const content = fs.readFileSync(readmePath, 'utf-8');
+            res.json({ content });
+        } else {
+            res.json({ content: "# Readme not found\nPlease create a README.md file in the root directory." });
+        }
+    } catch (e) {
+        console.error("Failed to read readme", e);
+        res.status(500).json({ error: "Failed to read readme" });
+    }
 });
 
 // UPDATE ENDPOINT
@@ -145,10 +171,14 @@ app.post('/api/state', (req, res) => {
 app.get('/api/vmix', (req, res) => {
   const queryIndex = req.url.indexOf('?');
   const queryString = queryIndex !== -1 ? req.url.substring(queryIndex) : '';
+  
+  // Use dynamic configuration from state, fallback to localhost if missing
+  const vmixHost = appState.design.vmixHost || '127.0.0.1';
+  const vmixPort = appState.design.vmixPort || 8088;
 
   const options = {
-    hostname: VMIX_HOST,
-    port: VMIX_PORT,
+    hostname: vmixHost,
+    port: vmixPort,
     path: '/api' + queryString,
     method: 'GET'
   };
@@ -160,7 +190,8 @@ app.get('/api/vmix', (req, res) => {
   });
 
   request.on('error', (e) => {
-    res.status(502).json({ error: 'Failed to connect to vMix' });
+    console.error(`[vMix Proxy Error] Could not connect to ${vmixHost}:${vmixPort}`, e.message);
+    res.status(502).json({ error: `Failed to connect to vMix at ${vmixHost}:${vmixPort}` });
   });
 
   request.end();

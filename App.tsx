@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { MATCH_SEQUENCE } from './constants';
-import { MapData, SelectionState, Team, PhaseType, MatchStep, LogEntry, DesignSettings } from './types';
+import { MapData, SelectionState, Team, PhaseType, MatchStep, LogEntry, DesignSettings, SharedState } from './types';
 import { vmixService } from './services/vmixService';
 import { StepBox } from './components/StepBox';
 import { MapSelector } from './components/MapSelector';
 import { LogViewer } from './components/LogViewer';
 import { OverlayPlate } from './components/OverlayPlate';
 import { SettingsPanel } from './components/SettingsPanel';
+import { ReadmeViewer } from './components/ReadmeViewer';
 
 const App: React.FC = () => {
   const [maps, setMaps] = useState<MapData[]>([]);
@@ -19,20 +20,25 @@ const App: React.FC = () => {
 
   // Design Settings State
   const [design, setDesign] = useState<DesignSettings>({
-      banColorStart: "#880000",
-      banColorEnd: "#111111",
-      pickColorStart: "#006400",
-      pickColorEnd: "#111111",
-      deciderColorStart: "#ca8a04",
-      deciderColorEnd: "#111111",
+      banColorStart: "#880000ff",
+      banColorEnd: "#111111ff",
+      pickColorStart: "#006400ff",
+      pickColorEnd: "#111111ff",
+      deciderColorStart: "#ca8a04ff",
+      deciderColorEnd: "#111111ff",
       scale: 1,
+      itemScale: 1,
       verticalGap: 12,
       horizontalOffset: 60,
       verticalOffset: 180,
       imageBorderWidth: 2,
+      deciderOffsetX: 0,
+      deciderOffsetY: 0,
       fontSize: 24,
       fontFamily: 'Arial',
-      customFonts: []
+      customFonts: [],
+      language: 'EN',
+      vmixDelay: 4000 // 4 seconds
   });
 
   const [loading, setLoading] = useState<boolean>(true);
@@ -41,6 +47,7 @@ const App: React.FC = () => {
   const [editingStepId, setEditingStepId] = useState<number | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isLogOpen, setIsLogOpen] = useState(false);
+  const [isReadmeOpen, setIsReadmeOpen] = useState(false);
 
   // Sync Controls
   const [autoSync, setAutoSync] = useState<boolean>(true);
@@ -180,28 +187,44 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleIdChange = (stepId: number, newId: string) => {
+      setSteps(prevSteps => prevSteps.map(step => {
+          if (step.id !== stepId) return step;
+          return { ...step, customId: newId };
+      }));
+  };
+
   const handleIndividualTrigger = async (e: React.MouseEvent, stepId: number) => {
     e.stopPropagation();
 
+    // IF Triggering ON
     if (!triggeredSteps.includes(stepId)) {
         const mapName = selections[stepId];
         if (!mapName) {
             alert("Please select a map first.");
             return;
         }
+        
         const mapData = maps.find(m => m.name === mapName);
-        if (mapData) {
-            vmixService.triggerMapReveal(mapData).catch(console.error);
-        }
-    }
+        const stepData = steps.find(s => s.id === stepId);
 
-    if (triggeredSteps.includes(stepId)) {
-      setTriggeredSteps(prev => prev.filter(id => id !== stepId));
+        if (mapData && stepData) {
+            const delay = design.vmixDelay || 4000;
+
+            // 1. Fire vMix video sequence immediately (pass delay for Overlay OFF logic)
+            vmixService.triggerMapReveal(mapData, stepData, delay).catch(console.error);
+
+            // 2. Wait for Delay, then show Web Overlay
+            setTimeout(() => {
+                 setTriggeredSteps(prev => [...prev, stepId]);
+                 if (stepId === currentStepId && currentStepId < steps.length) {
+                    setCurrentStepId(currentStepId + 1);
+                 }
+            }, delay);
+        }
     } else {
-      setTriggeredSteps(prev => [...prev, stepId]);
-      if (stepId === currentStepId && currentStepId < steps.length) {
-        setCurrentStepId(currentStepId + 1);
-      }
+        // IF Triggering OFF (Reset)
+        setTriggeredSteps(prev => prev.filter(id => id !== stepId));
     }
   };
 
@@ -252,6 +275,20 @@ const App: React.FC = () => {
     }
   };
 
+  // Full state import handler
+  const handleFullImport = (importedState: Partial<SharedState>) => {
+      if (importedState.maps) {
+          setMaps(importedState.maps);
+          setMapsDirty(true); // Ensure maps get pushed to server
+      }
+      if (importedState.steps) setSteps(importedState.steps);
+      if (importedState.selections) setSelections(importedState.selections);
+      if (importedState.visibleSteps) setTriggeredSteps(importedState.visibleSteps);
+      if (importedState.teamAName) setTeamAName(importedState.teamAName);
+      if (importedState.teamBName) setTeamBName(importedState.teamBName);
+      if (importedState.design) setDesign(prev => ({...prev, ...importedState.design}));
+  };
+
   const openOverlay = () => {
     const params = new URLSearchParams({ ts: Date.now().toString() });
     window.open(`/overlay?${params.toString()}`, '_blank');
@@ -271,14 +308,8 @@ const App: React.FC = () => {
     }
 
     const isTriggered = triggeredSteps.includes(step.id);
-    
-    // Preview Logic: 
-    // - Always render (isVisible={true}) so user can see design
-    // - Use Opacity to indicate 'Not Triggered'
-    // - Apply Scale to simulate overlay look
-    // - Fixed width 450px to match overlay source width
-    
     const isLeft = step.team === Team.A;
+    const itemScale = design.itemScale || 1;
 
     return (
         <div 
@@ -287,11 +318,10 @@ const App: React.FC = () => {
             style={{ 
                 marginBottom: `${design.verticalGap * design.scale}px`,
                 opacity: isTriggered ? 1 : 0.4, // Dim if not live
-                transform: `scale(${design.scale})`,
+                transform: `scale(${design.scale * itemScale})`,
                 transformOrigin: isLeft ? 'left top' : 'right top',
                 width: '450px',
-                // Adjust height based on scale to prevent overlapping since scale doesn't affect flow layout
-                height: `${72 * design.scale}px` 
+                height: `${72 * design.scale * itemScale}px` 
             }}
         >
             <OverlayPlate 
@@ -304,6 +334,7 @@ const App: React.FC = () => {
                 fontSize={design.fontSize}
                 fontFamily={design.fontFamily}
                 borderWidth={design.imageBorderWidth}
+                language={design.language}
             />
         </div>
     );
@@ -338,6 +369,27 @@ const App: React.FC = () => {
 
   if (loading) return <div className="p-10 text-white bg-gray-950 h-screen flex items-center justify-center font-bold text-2xl">Loading Controller...</div>;
 
+  // Construct full state for export
+  const fullAppState: SharedState = {
+      teamAName,
+      teamBName,
+      maps,
+      steps,
+      selections,
+      visibleSteps: triggeredSteps,
+      design
+  };
+
+  // Determine which maps are used elsewhere, but EXCLUDE the map used by the currently edited step
+  // so the user can see it as "selectable" (to keep it) or see it's active.
+  const getUsedMaps = () => {
+      if (editingStepId === null) return Object.values(selections);
+      
+      return Object.entries(selections)
+          .filter(([id]) => Number(id) !== editingStepId)
+          .map(([, name]) => name);
+  };
+
   return (
     <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
       
@@ -360,6 +412,13 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex gap-4 items-center">
+             <button 
+                onClick={() => setIsReadmeOpen(true)}
+                className="bg-black/30 hover:bg-black/50 text-white px-3 py-1 rounded text-xs uppercase font-bold border border-black/10 flex items-center gap-1 transition-colors"
+            >
+                <span>📚 Инструкция</span>
+            </button>
+
              <button 
                 onClick={() => setIsSettingsOpen(!isSettingsOpen)}
                 className={`bg-gray-800 hover:bg-gray-700 text-white px-3 py-1 rounded text-xs uppercase font-bold border border-gray-600 flex items-center gap-1 ${isSettingsOpen ? 'bg-gray-700 ring-2 ring-orange-500' : ''}`}
@@ -412,7 +471,7 @@ const App: React.FC = () => {
 
       <div className="flex-grow flex overflow-hidden p-4 gap-6 justify-center">
         
-        {/* Left Preview - Added Padding and removed conflicting overflow to fix clipping */}
+        {/* Left Preview */}
         {showPreviewA && (
             <div className="hidden xl:flex flex-col w-[460px] shrink-0 border-r border-gray-800 pr-2 pl-4 overflow-y-auto custom-scrollbar">
                 <h3 className="text-gray-500 font-bold uppercase text-xs mb-4 text-left">Overlay Preview (A)</h3>
@@ -422,6 +481,7 @@ const App: React.FC = () => {
             </div>
         )}
 
+        {/* Central Controller */}
         <div className="flex flex-col overflow-y-auto custom-scrollbar px-2 w-full max-w-4xl shrink-0">
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 relative">
                <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gray-800 -translate-x-1/2 hidden md:block"></div>
@@ -440,6 +500,7 @@ const App: React.FC = () => {
                      onClick={() => handleSelection(step.id)}
                      onTypeToggle={(e) => handleTypeToggle(e, step.id)}
                      onTrigger={(e) => handleIndividualTrigger(e, step.id)}
+                     onIdChange={(val) => handleIdChange(step.id, val)}
                    />
                  ))}
                </div>
@@ -458,6 +519,7 @@ const App: React.FC = () => {
                      onClick={() => handleSelection(step.id)}
                      onTypeToggle={(e) => handleTypeToggle(e, step.id)}
                      onTrigger={(e) => handleIndividualTrigger(e, step.id)}
+                     onIdChange={(val) => handleIdChange(step.id, val)}
                    />
                  ))}
                </div>
@@ -476,12 +538,13 @@ const App: React.FC = () => {
                      onClick={() => handleSelection(deciderStep.id)}
                      onTypeToggle={(e) => handleTypeToggle(e, deciderStep.id)}
                      onTrigger={(e) => handleIndividualTrigger(e, deciderStep.id)}
+                     onIdChange={(val) => handleIdChange(deciderStep.id, val)}
                 />
               </div>
             )}
         </div>
 
-        {/* Right Preview - Added Padding and alignment to fix clipping */}
+        {/* Right Preview */}
         {showPreviewB && (
             <div className="hidden xl:flex flex-col w-[460px] shrink-0 border-l border-gray-800 pl-4 pr-2 overflow-y-auto custom-scrollbar items-end">
                 <h3 className="text-gray-500 font-bold uppercase text-xs mb-4 text-right w-full">Overlay Preview (B)</h3>
@@ -516,7 +579,7 @@ const App: React.FC = () => {
         maps={maps}
         onSelect={confirmMapSelection}
         onClose={() => setIsModalOpen(false)}
-        usedMapNames={Object.values(selections)}
+        usedMapNames={getUsedMaps()}
       />
 
       <SettingsPanel 
@@ -524,6 +587,8 @@ const App: React.FC = () => {
         settings={design}
         onUpdate={setDesign}
         onClose={() => setIsSettingsOpen(false)}
+        fullState={fullAppState}
+        onFullImport={handleFullImport}
       />
 
       <LogViewer 
@@ -531,6 +596,11 @@ const App: React.FC = () => {
         logs={logs}
         onClose={() => setIsLogOpen(false)}
         onClear={() => setLogs([])}
+      />
+
+      <ReadmeViewer 
+        isOpen={isReadmeOpen}
+        onClose={() => setIsReadmeOpen(false)}
       />
 
     </div>

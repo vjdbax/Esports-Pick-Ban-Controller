@@ -1,10 +1,6 @@
-import { MapData, LogEntry } from '../types';
+import { MapData, LogEntry, MatchStep, PhaseType } from '../types';
 import { 
   VMIX_INPUT_NAME, 
-  VMIX_SCRIPT_NAME, 
-  TEXT_FIELD_HIDDEN, 
-  TEXT_FIELD_VISIBLE,
-  IMAGE_FIELD
 } from '../constants';
 
 const API_BASE = '/api/vmix';
@@ -62,63 +58,83 @@ export const vmixService = {
   },
 
   /**
-   * Triggers the full sequence in vMix
-   * @param map The map data
-   * @param physicalImagePath The full local path on the vMix machine (e.g. "C:\Assets\map.png")
+   * Updated logic:
+   * 1. Target Input: PIC_BAN.gtzip -> TextBlock{customId}.Text = MapName.mp4
+   * 2. Restart & Play MapName.mp4
+   * 3. Trigger OverlayInput2In for MapName.mp4 (VIDEO)
+   * 4. Trigger OverlayInput3In for Phase Image (BAN/PICK/DECIDER)
+   * 5. Wait {delay} ms
+   * 6. Trigger OverlayInput2Out AND OverlayInput3Out
    */
-  triggerMapReveal: async (map: MapData, physicalImagePath?: string): Promise<boolean> => {
-    emitLog('info', `>>> START REVEAL SEQUENCE: ${map.name} (Video: ${map.videoInput})`);
+  triggerMapReveal: async (map: MapData, step: MatchStep, delayMs: number = 4000): Promise<boolean> => {
+    const plateId = step.customId || step.id.toString();
+    const mapVideoName = `${map.name}.mp4`; // Ensure we target the video input by name
     
-    // 1. Set Hidden Input Name (Matches the Video Input Name, e.g. "Map.mp4")
-    await sendCommand({
-      Function: 'SetText',
-      Input: VMIX_INPUT_NAME,
-      SelectedName: TEXT_FIELD_HIDDEN,
-      Value: map.videoInput
-    });
-
-    // 2. Set Visible Map Name (Display Name, e.g. "Map")
-    await sendCommand({
-      Function: 'SetText',
-      Input: VMIX_INPUT_NAME,
-      SelectedName: TEXT_FIELD_VISIBLE,
-      Value: map.name
-    });
-
-    // 3. Set Map Image (using the physical path)
-    if (physicalImagePath) {
-      await sendCommand({
-        Function: 'SetImage',
-        Input: VMIX_INPUT_NAME,
-        SelectedName: IMAGE_FIELD,
-        Value: physicalImagePath
-      });
-    } else {
-      // It's okay to skip this if we are just using web overlay, 
-      // but for vMix native Title inputs, this is needed.
-      // emitLog('info', 'Skipping SetImage: No physical path provided');
+    // Determine the secondary image input based on type
+    let overlayImageInput = "plaska_PICK_small.png"; // Default to PICK
+    
+    if (step.type === PhaseType.BAN) {
+        overlayImageInput = "plaska_BAN small.png";
+    } else if (step.type === PhaseType.DECIDER) {
+        overlayImageInput = "plaska_TB_small.png";
     }
-
-    // 4. Direct Fade to the Map Video
+    
+    emitLog('info', `>>> REVEAL Plate #${plateId}: Video on Ovl2, ${step.type} Image on Ovl3`);
+    
+    // 1. Send Map Name to Title Input (PIC_BAN.gtzip) -> TextBlock{N}.Text
+    const fieldName = `TextBlock${plateId}.Text`;
+    
     await sendCommand({
-      Function: 'Fade',
-      Input: map.videoInput,
-      Duration: '500' 
+      Function: 'SetText',
+      Input: VMIX_INPUT_NAME, 
+      SelectedName: fieldName,
+      Value: mapVideoName
     });
 
-    // 5. Ensure Overlay is ON
+    // 2. Control the Map Video Input directly
+    
+    // Restart video to beginning
     await sendCommand({
-      Function: 'OverlayInput1',
-      Input: VMIX_INPUT_NAME
+        Function: 'Restart',
+        Input: mapVideoName
+    });
+    
+    // Play the map video
+    await sendCommand({
+      Function: 'Play',
+      Input: mapVideoName
     });
 
-    // 6. Start the Script
+    // 3. Switch Overlay 2 ON (Video)
     await sendCommand({
-      Function: 'ScriptStart',
-      Value: VMIX_SCRIPT_NAME
+      Function: 'OverlayInput2In',
+      Input: mapVideoName
     });
 
-    emitLog('success', `<<< SEQUENCE COMPLETE`);
+    // 4. Switch Overlay 3 ON (Plate Image)
+    await sendCommand({
+      Function: 'OverlayInput3In',
+      Input: overlayImageInput
+    });
+
+    // 5. Set Timer to switch BOTH Overlays OFF after delay
+    setTimeout(async () => {
+        emitLog('info', `>>> TIMEOUT: Hiding Overlays 2 & 3`);
+        
+        // Hide Video
+        await sendCommand({
+            Function: 'OverlayInput2Out',
+            Input: mapVideoName
+        });
+
+        // Hide Plate Image
+        await sendCommand({
+            Function: 'OverlayInput3Out',
+            Input: overlayImageInput
+        });
+
+    }, delayMs);
+    
     return true;
   }
 };

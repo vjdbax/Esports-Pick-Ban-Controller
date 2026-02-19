@@ -12,6 +12,7 @@ interface StepBoxProps {
   onClick: () => void;
   onTypeToggle: (e: React.MouseEvent) => void;
   onTrigger: (e: React.MouseEvent) => void;
+  onIdChange: (newId: string) => void; // New prop for ID editing
 }
 
 export const StepBox: React.FC<StepBoxProps> = ({
@@ -24,7 +25,8 @@ export const StepBox: React.FC<StepBoxProps> = ({
   teamName,
   onClick,
   onTypeToggle,
-  onTrigger
+  onTrigger,
+  onIdChange
 }) => {
   // Determine colors based on phase type
   let headerColor = 'bg-gray-700';
@@ -52,19 +54,24 @@ export const StepBox: React.FC<StepBoxProps> = ({
   // Triggered state (e.g. green border or different opacity)
   const triggeredClass = isTriggered ? 'ring-2 ring-green-500' : '';
 
+  const handleIdClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+  };
+
   return (
     <div 
       onClick={onClick}
       className={`
         relative flex flex-col rounded-md overflow-hidden border-2 cursor-pointer transition-all duration-200
         ${borderColor} ${activeClass} ${triggeredClass}
-        h-24
+        h-24 group
       `}
     >
       {/* Header Bar */}
       <div className={`${headerColor} text-white text-xs font-bold px-2 py-1 uppercase flex justify-between items-center select-none`}>
         <div className="flex items-center gap-2">
-          <span>{teamName} - </span>
+          <span className="truncate max-w-[80px]">{teamName}</span>
+          <span>-</span>
           {/* Toggleable Type Badge */}
           {step.type !== PhaseType.DECIDER ? (
              <span 
@@ -78,24 +85,39 @@ export const StepBox: React.FC<StepBoxProps> = ({
              <span>{step.type}</span>
           )}
         </div>
-        <span className="opacity-70">#{step.id}</span>
+        
+        {/* Editable ID Input */}
+        <div className="flex items-center gap-1" onClick={handleIdClick}>
+            <span className="opacity-50 text-[10px]">ID:</span>
+            <input 
+                type="text" 
+                value={step.customId || step.id}
+                onChange={(e) => onIdChange(e.target.value)}
+                className="w-8 bg-black/20 text-white text-center text-xs border border-transparent hover:border-white/50 focus:border-white focus:outline-none rounded px-0.5 py-0"
+            />
+        </div>
       </div>
 
       {/* Body / Map Content */}
-      <div className={`${bodyColor} flex-grow flex items-center justify-center relative overflow-hidden group`}>
+      <div className={`${bodyColor} flex-grow flex items-center justify-center relative overflow-hidden`}>
         {mapImage ? (
           <>
-            <img src={mapImage} alt={mapName} className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-40 transition-opacity" />
+            <img src={mapImage} alt={mapName} className="absolute inset-0 w-full h-full object-cover opacity-60 transition-opacity" />
             <span className="relative z-10 font-bold text-white text-shadow-md text-lg text-center px-2 pointer-events-none">
               {mapName}
             </span>
             
+            {/* Hover overlay to indicate re-selectability */}
+            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity z-10 pointer-events-none">
+                <span className="text-xs font-bold border border-white/50 px-2 py-1 rounded text-white/80">CHANGE MAP</span>
+            </div>
+
             {/* Individual Trigger Button - Visible when map is selected */}
             <div className="absolute right-2 bottom-2 z-20">
                <button
                  onClick={onTrigger}
                  className={`
-                   text-xs font-bold uppercase px-3 py-1 rounded shadow-lg border transition-all hover:scale-105
+                   text-xs font-bold uppercase px-3 py-1 rounded shadow-lg border transition-all hover:scale-105 pointer-events-auto
                    ${isTriggered 
                      ? 'bg-red-600 border-red-400 text-white hover:bg-red-500' 
                      : 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500 animate-pulse'}

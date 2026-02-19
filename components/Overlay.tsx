@@ -81,12 +81,15 @@ export const Overlay: React.FC<OverlayProps> = ({ variant = 'full' }) => {
   
   // Design Defaults fallback
   const d: DesignSettings = design || {
-      banColorStart: "#880000", banColorEnd: "#111111",
-      pickColorStart: "#006400", pickColorEnd: "#111111",
-      deciderColorStart: "#ca8a04", deciderColorEnd: "#111111",
-      scale: 1, verticalGap: 12, horizontalOffset: 60, verticalOffset: 180,
+      banColorStart: "#880000ff", banColorEnd: "#111111ff",
+      pickColorStart: "#006400ff", pickColorEnd: "#111111ff",
+      deciderColorStart: "#ca8a04ff", deciderColorEnd: "#111111ff",
+      scale: 1, itemScale: 1, verticalGap: 12, horizontalOffset: 60, verticalOffset: 180,
       imageBorderWidth: 2,
-      fontSize: 24, fontFamily: 'Arial', customFonts: []
+      deciderOffsetX: 0, deciderOffsetY: 0,
+      fontSize: 24, fontFamily: 'Arial', customFonts: [],
+      language: 'EN',
+      vmixDelay: 4000
   };
 
   const teamASteps = currentSteps.filter(s => s.team === Team.A && s.type !== PhaseType.DECIDER);
@@ -101,7 +104,7 @@ export const Overlay: React.FC<OverlayProps> = ({ variant = 'full' }) => {
   const showDecider = variant === 'full'; 
 
   // --- Render Helpers ---
-  const renderPlate = (step: any) => {
+  const renderPlate = (step: any, align: 'left' | 'right' | 'center') => {
     let cStart = d.banColorStart;
     let cEnd = d.banColorEnd;
     if (step.type === PhaseType.PICK) {
@@ -115,8 +118,23 @@ export const Overlay: React.FC<OverlayProps> = ({ variant = 'full' }) => {
     const mapName = selections[step.id];
     const mapData = getMapData(mapName);
 
+    // Apply item scale here via transform
+    // We must set transformOrigin to correspond with the alignment so they scale "in place"
+    let tOrigin = 'center center';
+    if (align === 'left') tOrigin = 'top left';
+    if (align === 'right') tOrigin = 'top right';
+    if (align === 'center') tOrigin = 'top center';
+
     return (
-        <div key={step.id} style={{ marginBottom: `${d.verticalGap}px` }}>
+        <div 
+            key={step.id} 
+            style={{ 
+                marginBottom: `${d.verticalGap}px`,
+                transform: `scale(${d.itemScale || 1})`,
+                transformOrigin: tOrigin,
+                width: '100%', // FORCE WIDTH to ensure items-end works correctly in parent
+            }}
+        >
             <OverlayPlate 
                 type={step.type}
                 isVisible={isStepVisible(step.id)} 
@@ -127,6 +145,7 @@ export const Overlay: React.FC<OverlayProps> = ({ variant = 'full' }) => {
                 fontSize={d.fontSize}
                 fontFamily={d.fontFamily}
                 borderWidth={d.imageBorderWidth}
+                language={d.language}
             />
         </div>
     );
@@ -142,11 +161,6 @@ export const Overlay: React.FC<OverlayProps> = ({ variant = 'full' }) => {
         style={{ transformOrigin: 'top left' }} 
     >
       
-      {/* 
-         Removed Header (Names) and VS as requested. 
-         Elements are positioned based on user settings now. 
-      */}
-
       {/* Main Grid Content */}
       <div 
         className="absolute w-full flex justify-between"
@@ -161,13 +175,13 @@ export const Overlay: React.FC<OverlayProps> = ({ variant = 'full' }) => {
       >
         
         {/* Left Column */}
-        <div style={{ width: `${columnWidth}px` }} className="flex flex-col">
-            {showA && teamASteps.map(renderPlate)}
+        <div style={{ width: `${columnWidth}px` }} className="flex flex-col items-start">
+            {showA && teamASteps.map(s => renderPlate(s, 'left'))}
         </div>
 
         {/* Right Column */}
-        <div style={{ width: `${columnWidth}px` }} className="flex flex-col">
-             {showB && teamBSteps.map(renderPlate)}
+        <div style={{ width: `${columnWidth}px` }} className="flex flex-col items-end">
+             {showB && teamBSteps.map(s => renderPlate(s, 'right'))}
         </div>
       </div>
 
@@ -177,12 +191,16 @@ export const Overlay: React.FC<OverlayProps> = ({ variant = 'full' }) => {
             className="absolute left-1/2 -translate-x-1/2"
             style={{ 
                 bottom: '50px', 
-                width: `${600 * d.scale}px`, // Scale decider width
-                transform: `scale(${d.scale})`,
-                transformOrigin: 'bottom center'
+                width: `${600 * d.scale}px`, 
+                // We combine the positioning transform with the Global Scale transform
+                transform: `scale(${d.scale}) translate(${d.deciderOffsetX}px, ${-d.deciderOffsetY}px)`,
+                transformOrigin: 'bottom center',
+                // Note: deciderOffsetY is inverted for intuitive "Up/Down" logic on UI
             }}
         >
-             {renderPlate(deciderStep)}
+             {/* Note: Decider internal plate also gets itemScale if we use the helper, 
+                 but we need to pass 'center' alignment */}
+             {renderPlate(deciderStep, 'center')}
         </div>
       )}
 

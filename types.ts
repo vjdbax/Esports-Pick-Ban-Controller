@@ -20,6 +20,7 @@ export interface MapData {
 
 export interface MatchStep {
   id: number;
+  customId?: string; // Manual ID for vMix mapping (e.g. "1", "2", "A")
   team: Team;
   type: PhaseType;
 }
@@ -42,7 +43,7 @@ export interface CustomFont {
 }
 
 export interface DesignSettings {
-  // Colors (Start / End gradients)
+  // Colors (Start / End gradients) - Now supports #RRGGBBAA
   banColorStart: string;
   banColorEnd: string;
   pickColorStart: string;
@@ -51,16 +52,29 @@ export interface DesignSettings {
   deciderColorEnd: string;
 
   // Geometry
-  scale: number; // 0.5 to 2.0
+  scale: number; // Global Container Scale
+  itemScale: number; // Individual Plate Scale
   verticalGap: number; // px
   horizontalOffset: number; // px from center
   verticalOffset: number; // px from top base line
   imageBorderWidth: number; // px
+  
+  // Decider Specific Geometry
+  deciderOffsetX: number; // px (+/-)
+  deciderOffsetY: number; // px (+/-)
 
-  // Typography
+  // Typography & Content
   fontSize: number;
   fontFamily: string;
   customFonts: CustomFont[];
+  language: 'EN' | 'RU';
+  
+  // Logic
+  vmixDelay: number; // Delay in ms before showing web overlay
+  
+  // Network / Connection
+  vmixHost: string;
+  vmixPort: number;
 }
 
 // New Interface for the shared application state
